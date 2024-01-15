@@ -1,0 +1,322 @@
+Option Explicit
+
+Sub initialize()
+   Dim cn As New ADODB.Connection
+   Dim rs As New ADODB.Recordset
+   Dim sql As String
+   Dim filepath As FileDialog
+   Dim path As String
+
+'Clear previous data.
+Cells.Clear
+Cells.ClearContents
+SelCourse.ListBox1.Clear
+SelMarks.ListBox2.Clear
+
+'Opens file picker for courses.
+On Error GoTo ErrorHand
+Set filepath = Application.FileDialog(msoFileDialogFilePicker)
+With filepath
+    .Title = "Select database containing courses."
+    .Filters.Clear
+    .Show
+End With
+
+If filepath.SelectedItems.Count = 1 Then
+    path = filepath.SelectedItems(1)
+End If
+   
+'Establishes connection to database.
+With cn
+    .ConnectionString = "Data Source=" & path
+    .Provider = "Microsoft.ACE.OLEDB.12.0"
+    .Open
+End With
+
+'Runs query to select all objects from courses field.
+sql = "SELECT * FROM courses"
+With rs
+.Open sql, cn
+    Do Until .EOF
+        SelCourse.ListBox1.AddItem .Fields("CourseCode")
+        .MoveNext
+    Loop
+
+'Closes connection to database.
+.Close
+End With
+SelCourse.Show
+
+ErrorHand: Exit Sub
+End Sub
+
+Sub GetCourseData(id As String, mark As String)
+
+   Dim cn As New ADODB.Connection
+   Dim rs As New ADODB.Recordset
+   Dim sql As String
+   Dim filepath As FileDialog
+   Dim path As String
+   Dim a As String
+   Dim c As String
+   Dim x As Integer
+
+'Opens file picker for marks.
+x = 1
+Set filepath = Application.FileDialog(msoFileDialogFilePicker)
+With filepath
+    .Title = "Select database containing marks."
+    .Filters.Clear
+    .Show
+End With
+
+If filepath.SelectedItems.Count = 1 Then
+    path = filepath.SelectedItems(1)
+End If
+
+'Establishes connection to database.
+With cn
+    .ConnectionString = "Data Source=" & path
+    .Provider = "Microsoft.ACE.OLEDB.12.0"
+    .Open
+End With
+        
+'Query to show selected course name in worksheet.
+Range("a1").value = "Course"
+sql = "SELECT*FROM courses WHERE courseCode= '" & id & "' "
+With rs
+.Open sql, cn
+    Do Until .EOF
+        Range("B1").value = .Fields("courseName")
+        c = Range("B1").value
+         x = x + 1
+        .MoveNext
+    Loop
+.Close
+End With
+
+'Check what marks to examine, selected by the user.
+If StrComp(mark, "A1") = 0 Then
+    a = "A1"
+ElseIf StrComp(mark, "A2") = 0 Then
+    a = "A2"
+ElseIf StrComp(mark, "A3") = 0 Then
+    a = "A3"
+ElseIf StrComp(mark, "A4") = 0 Then
+    a = "A4"
+ElseIf StrComp(mark, "Midterm") = 0 Then
+    a = "Midterm"
+ElseIf StrComp(mark, "Final") = 0 Then
+    a = "Exam"
+End If
+
+'Query that finds required data.
+sql = "SELECT students.FirstName, students.LastName, grades.ID, grades.studentID, grades.course, grades.A1, grades.A2, grades.A3, grades.A4, grades.Midterm, grades.Exam " _
+        & "FROM students INNER JOIN (courses INNER JOIN grades ON courses.CourseCode = grades.course) ON students.studentID = grades.studentID " _
+        & "WHERE grades.course = '" & id & "'"
+    
+    'Displays and formats data into the worksheet.
+    With rs
+        .Open sql, cn
+        Do Until .EOF
+         Range("a3").value = "ID"
+         Range("b3").value = "FirstName"
+         Range("c3").value = "LastName"
+         Range("d3").value = "StudentID"
+         Range("e3").value = "course"
+         Range("f3").value = a
+         
+         Range("a3").Offset(x, 0).value = .Fields("ID")
+         Range("b3").Offset(x, 0).value = .Fields("FirstName")
+         Range("c3").Offset(x, 0).value = .Fields("LastName")
+         Range("d3").Offset(x, 0).value = .Fields("studentID")
+         Range("e3").Offset(x, 0).value = .Fields("course")
+         Range("f3").Offset(x, 0).value = .Fields(a)
+         x = x + 1
+        .MoveNext
+        Loop
+    .Close
+    End With
+    
+    'Closes the connection to database.
+    cn.Close
+    Set cn = Nothing
+    Set rs = Nothing
+    
+    'Calls subroutine to generate report worksheet.
+    Call Calculate(a, c)
+    Call GenerateReport(a, c)
+    
+End Sub
+
+Sub Calculate(a As String, c As String)
+Dim Ws As Worksheet
+Dim NewWs As Worksheet
+Dim DataWs As Range
+
+Set NewWs = ActiveWorkbook.Worksheets("Report")
+Set DataWs = ThisWorkbook.Sheets("Data").Range("F5")
+
+'Checks if "Report" worksheets exists, if true, delete previous worksheet and create a new one containing calculations.
+For Each Ws In ThisWorkbook.Worksheets
+    If Ws.Name = "Report" Then
+        Application.DisplayAlerts = False
+        Ws.Delete
+        Application.DisplayAlerts = True
+        Sheets.Add(After:=Sheets("Data")).Name = "Report"
+        Call CreateGraph(a, c, DataWs)
+    End If
+Next Ws
+
+'Generates calculations and displays it into worksheet.
+ThisWorkbook.Sheets("Report").Range("A1").value = "Course"
+ThisWorkbook.Sheets("Report").Range("B1").value = c
+
+Worksheets("Report").Range("A3").value = "Average"
+Worksheets("Report").Range("B3").value = Application.Average(Sheets("Data").Range(DataWs, DataWs.End(xlDown)))
+
+Worksheets("Report").Range("A4").value = "StDev"
+Worksheets("Report").Range("B4").value = Application.StDev(Sheets("Data").Range(DataWs, DataWs.End(xlDown)))
+
+Worksheets("Report").Range("A5").value = "Median"
+Worksheets("Report").Range("B5").value = Application.Median(Sheets("Data").Range(DataWs, DataWs.End(xlDown)))
+
+Worksheets("Report").Range("A6").value = "Mode"
+Worksheets("Report").Range("B6").value = Application.Mode(Sheets("Data").Range(DataWs, DataWs.End(xlDown)))
+
+Worksheets("Report").Range("A7").value = "Min"
+Worksheets("Report").Range("B7").value = Application.Min(Sheets("Data").Range(DataWs, DataWs.End(xlDown)))
+
+Worksheets("Report").Range("A8").value = "Max"
+Worksheets("Report").Range("B8").value = Application.Max(Sheets("Data").Range(DataWs, DataWs.End(xlDown)))
+
+End Sub
+
+Sub CreateGraph(a As String, c As String, DataWs As Range)
+Dim histogram As chartObject
+Dim ttl As String
+Dim count1 As Integer
+Dim count2 As Integer
+Dim count3 As Integer
+Dim count4 As Integer
+Dim count5 As Integer
+Dim count6 As Integer
+Dim count7 As Integer
+Dim count8 As Integer
+Dim count9 As Integer
+Dim count10 As Integer
+Dim num As Variant
+count1 = 0
+count2 = 0
+count3 = 0
+count4 = 0
+count5 = 0
+count6 = 0
+count7 = 0
+count8 = 0
+count9 = 0
+count10 = 0
+
+'Formats grades scores Table
+ThisWorkbook.Sheets("Report").Range("A10").value = "Grades"
+ThisWorkbook.Sheets("Report").Range("B10").value = "Frequency"
+ThisWorkbook.Worksheets("Report").Range("A11").value = 10
+ThisWorkbook.Worksheets("Report").Range("A12").value = 20
+ThisWorkbook.Worksheets("Report").Range("A13").value = 30
+ThisWorkbook.Worksheets("Report").Range("A14").value = 40
+ThisWorkbook.Worksheets("Report").Range("A15").value = 50
+ThisWorkbook.Worksheets("Report").Range("A16").value = 60
+ThisWorkbook.Worksheets("Report").Range("A17").value = 70
+ThisWorkbook.Worksheets("Report").Range("A18").value = 80
+ThisWorkbook.Worksheets("Report").Range("A19").value = 90
+ThisWorkbook.Worksheets("Report").Range("A20").value = 100
+
+'If value falls into bin range, add to its range's count
+For Each num In Sheets("Data").Range(DataWs, DataWs.End(xlDown))
+If num < 10 Then
+    count1 = count1 + 1
+ElseIf num >= 10 And num < 20 Then
+    count2 = count2 + 1
+ElseIf num >= 20 And num < 30 Then
+    count3 = count3 + 1
+ElseIf num >= 30 And num < 40 Then
+    count4 = count4 + 1
+ElseIf num >= 40 And num < 50 Then
+    count5 = count5 + 1
+ElseIf num >= 50 And num < 60 Then
+    count6 = count6 + 1
+ElseIf num >= 60 And num < 70 Then
+    count7 = count7 + 1
+ElseIf num >= 70 And num < 80 Then
+    count8 = count8 + 1
+ElseIf num >= 80 And num < 90 Then
+    count9 = count9 + 1
+ElseIf num >= 90 And num < 100 Then
+    count10 = count10 + 1
+End If
+Next num
+
+'Complete frequency counts.
+ThisWorkbook.Worksheets("Report").Range("B11").value = count1
+ThisWorkbook.Worksheets("Report").Range("B12").value = count2
+ThisWorkbook.Worksheets("Report").Range("B13").value = count3
+ThisWorkbook.Worksheets("Report").Range("B14").value = count4
+ThisWorkbook.Worksheets("Report").Range("B15").value = count5
+ThisWorkbook.Worksheets("Report").Range("B16").value = count6
+ThisWorkbook.Worksheets("Report").Range("B17").value = count7
+ThisWorkbook.Worksheets("Report").Range("B18").value = count8
+ThisWorkbook.Worksheets("Report").Range("B19").value = count9
+ThisWorkbook.Worksheets("Report").Range("B20").value = count10
+
+'Creates Histogram chart.
+ttl = a & " results"
+Set histogram = ActiveSheet.ChartObjects.Add(Left:=350, Top:=-300, Width:=400, Height:=300)
+histogram.Chart.SetSourceData Source:=ThisWorkbook.Worksheets("Report").Range("B11:B20")
+histogram.Chart.ChartType = xlColumnClustered
+histogram.Chart.HasTitle = True
+histogram.Chart.ChartTitle.Text = ttl
+histogram.Chart.SeriesCollection(1).Name = "Frequency"
+histogram.Chart.Axes(xlCategory, xlPrimary).HasTitle = True
+histogram.Chart.Axes(xlCategory, xlPrimary).AxisTitle.Text = "Grade Scores"
+histogram.Chart.Axes(xlValue, xlPrimary).HasTitle = True
+histogram.Chart.Axes(xlValue, xlPrimary).AxisTitle.Text = "Frequency"
+  
+End Sub
+
+Sub GenerateReport(a As String, c As String)
+Dim WordApp As Word.Application
+Dim wdDoc As Word.document
+
+Set WordApp = CreateObject("Word.Application")
+
+'Creates new Document
+With WordApp
+.Documents.Add
+.Visible = True
+End With
+
+'Prints the contents of the report and adds chart containing data.
+With WordApp.Selection
+MsgBox c
+.TypeText "Student " & a & " Grades Report for " & c & " Students"
+.TypeParagraph
+.TypeText "Lowest grade: " & ThisWorkbook.Sheets("Report").Range("B7").value
+.TypeParagraph
+.TypeText "Highest grade: " & ThisWorkbook.Sheets("Report").Range("B8").value
+.TypeParagraph
+.TypeText "Average grade: " & ThisWorkbook.Sheets("Report").Range("B3").value
+.TypeParagraph
+.TypeText "Median grade: " & ThisWorkbook.Sheets("Report").Range("B5").value
+.TypeParagraph
+.TypeText "Mode: " & ThisWorkbook.Sheets("Report").Range("B6").value
+.TypeParagraph
+.TypeText "Standard deviation: " & ThisWorkbook.Sheets("Report").Range("B4").value
+.TypeParagraph
+ThisWorkbook.Sheets("Report").ChartObjects(1).Chart.CopyPicture
+.Paste
+End With
+
+
+
+End Sub
+
